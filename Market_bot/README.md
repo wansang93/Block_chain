@@ -7,13 +7,60 @@
 - 거래소별 가격차이를 조사하고 시세차익으로 돈을 번다.
 - 펀딩비를 지급하는 거래소에서 펀딩비를 받는다.
 
-## 생각나는대로 적기
+## 기술 순서
 
-1. 나는 업으로 시드를 만들고 투자로 돈을 법니다.
-2. 투자와 투기의 가장 큰 차이점은 원칙과 가치관과 지식이라고 생각합니다.
-3. 코인에 대한 지식은 책과 검색으로 공부합니다.
-   1. 월가의 영웅 가치투자를 읽습니다.(추천책)
-   2. 무엇인지 알고 삽니다.(현재는 시드가 작기 때문에 리스크에 대한 공부를 합니다.)
+### 1. 본인 IP 주소를 알아낸다. for API에 전용 IP등록을 위해서
 
-목표: 투자로 2의 n승으로 벌 수 있습니다.
-- 현재는 매우 비현실적인 부분입니다. 무언가의 깨닳음이 필요합니다.
+```pyhon
+import requests
+r = requests.get(r'http://jsonip.com')
+ip= r.json()['ip']
+print(ip)  # 182.219.90.***
+```
+
+### 2. 업비트 API KEY를 만든다. 링크 -> [https://www.upbit.com/mypage/open_api_management]
+
+### 3. 간단한 값을 얻어온다. 시세, 계좌 조회 등등
+
+```python
+# 시세 종목 조회
+import requests
+url = "https://api.upbit.com/v1/market/all"
+querystring = {"isDetails":"true"}
+response = requests.request("GET", url, params=querystring)
+print(response.text)
+```
+
+```python
+# 계좌 조회
+import os
+import jwt
+import uuid
+import hashlib
+from urllib.parse import urlencode
+
+import requests
+
+access_key = os.environ['UPBIT_OPEN_API_ACCESS_KEY']
+secret_key = os.environ['UPBIT_OPEN_API_SECRET_KEY']
+server_url = os.environ['UPBIT_OPEN_API_SERVER_URL']
+
+payload = {
+   'access_key': access_key,
+   'nonce': str(uuid.uuid4()),
+}
+
+jwt_token = jwt.encode(payload, secret_key).decode('utf-8')
+authorize_token = 'Bearer {}'.format(jwt_token)
+headers = {"Authorization": authorize_token}
+
+res = requests.get(server_url + "/v1/accounts", headers=headers)
+
+print(res.json())
+```
+
+jwt token 이란?
+
+- JSON Web Token의 약자
+- 전자 서명 된 URL-safe (URL로 이용할 수있는 문자 만 구성된)의 JSON
+> 참고 블로그 링크 -> [http://www.opennaru.com/opennaru-blog/jwt-json-web-token/](http://www.opennaru.com/opennaru-blog/jwt-json-web-token/)
