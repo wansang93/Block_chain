@@ -1,2 +1,6 @@
 config.json
 test.py
+data/
+*.csv
+*.parquet
+.env

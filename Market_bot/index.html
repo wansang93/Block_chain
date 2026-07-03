@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>업비트 거래 대시보드</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+  <script src="https://cdn.jsdelivr.net/npm/papaparse@5/papaparse.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Segoe UI', sans-serif; background: #0f1117; color: #e2e8f0; min-height: 100vh; }
+
+    /* ── 드롭존 ── */
+    #dropzone {
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      gap: 12px; min-height: 100vh; padding: 40px; text-align: center;
+    }
+    #dropzone h1 { font-size: 24px; font-weight: 700; color: #fff; }
+    #dropzone p  { color: #718096; font-size: 14px; }
+    .drop-area {
+      border: 2px dashed #2d3748; border-radius: 16px; padding: 48px 64px;
+      cursor: pointer; transition: border-color .2s, background .2s;
+    }
+    .drop-area:hover, .drop-area.over { border-color: #4299e1; background: #1a202c; }
+    .drop-area svg { width: 48px; height: 48px; color: #4299e1; margin-bottom: 12px; }
+    .drop-area span { display: block; color: #a0aec0; font-size: 14px; }
+    .drop-area strong { color: #4299e1; }
+    #file-input { display: none; }
+    .btn {
+      margin-top: 8px; padding: 10px 24px; background: #4299e1; color: #fff;
+      border: none; border-radius: 8px; font-size: 14px; cursor: pointer; font-weight: 600;
+    }
+    .btn:hover { background: #3182ce; }
+
+    /* ── 대시보드 ── */
+    #dashboard { display: none; }
+    header { padding: 20px 32px 0; display: flex; align-items: center; gap: 16px; }
+    header h1 { font-size: 20px; font-weight: 700; color: #fff; }
+    header p  { font-size: 12px; color: #718096; }
+    #btn-reset { margin-left: auto; padding: 6px 14px; background: #2d3748; color: #a0aec0; border: none; border-radius: 6px; font-size: 12px; cursor: pointer; }
+    #btn-reset:hover { background: #3d4a5c; }
+
+    .filters { display: flex; gap: 12px; flex-wrap: wrap; padding: 14px 32px; border-bottom: 1px solid #1e2533; }
+    .filters label { font-size: 12px; color: #718096; display: flex; flex-direction: column; gap: 4px; }
+    .filters select, .filters input {
+      background: #1a202c; border: 1px solid #2d3748; color: #e2e8f0;
+      border-radius: 6px; padding: 6px 10px; font-size: 13px; outline: none;
+    }
+    .filters select:focus, .filters input:focus { border-color: #4299e1; }
+
+    .metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; padding: 18px 32px; }
+    .metric { background: #1a202c; border: 1px solid #2d3748; border-radius: 10px; padding: 14px; }
+    .metric-label { font-size: 11px; color: #718096; margin-bottom: 6px; }
+    .metric-value { font-size: 20px; font-weight: 700; color: #fff; }
+    .metric-sub   { font-size: 11px; color: #48bb78; margin-top: 3px; }
+
+    .grid-2-1 { display: grid; grid-template-columns: 2fr 1fr; gap: 16px; padding: 0 32px; }
+    .grid-1-1 { display: grid; grid-template-columns: 1fr 1fr;  gap: 16px; padding: 0 32px; }
+    .grid-1-2 { display: grid; grid-template-columns: 1fr 2fr;  gap: 16px; padding: 0 32px; }
+    .spacer   { height: 16px; }
+
+    .card { background: #1a202c; border: 1px solid #2d3748; border-radius: 10px; padding: 18px; }
+    .card h3 { font-size: 12px; color: #a0aec0; margin-bottom: 14px; font-weight: 600; text-transform: uppercase; letter-spacing: .5px; }
+    canvas { max-height: 260px; }
+
+    .table-wrap { padding: 16px 32px 40px; }
+    .table-wrap h3 { font-size: 12px; color: #a0aec0; margin-bottom: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: .5px; }
+    .table-scroll { overflow-x: auto; border-radius: 10px; border: 1px solid #2d3748; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    thead th { background: #171e2e; color: #718096; padding: 10px 14px; text-align: left; font-weight: 600; white-space: nowrap; }
+    tbody tr { border-top: 1px solid #1e2533; }
+    tbody tr:hover { background: #1e2533; }
+    tbody td { padding: 8px 14px; white-space: nowrap; }
+    .badge { display: inline-block; border-radius: 4px; padding: 2px 7px; font-size: 11px; font-weight: 700; }
+    .bid  { background: #1a365d; color: #63b3ed; }
+    .ask  { background: #2d1515; color: #fc8181; }
+    .dep  { background: #1c3a2a; color: #68d391; }
+    .wit  { background: #2d1e0e; color: #f6ad55; }
+    .ord  { background: #1a2035; color: #b794f4; }
+  </style>
+</head>
+<body>
+
+<!-- ── 드롭존 ── -->
+<div id="dropzone">
+  <h1>업비트 거래 대시보드</h1>
+  <p>history_all.csv 파일을 불러오면 대시보드가 렌더링됩니다</p>
+  <div class="drop-area" id="drop-area">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+      <path stroke-linecap="round" stroke-linejoin="round" d="M12 16v-8m0 0-3 3m3-3 3 3M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1"/>
+    </svg>
+    <span>CSV 파일을 여기에 <strong>드래그&드롭</strong></span>
+    <span style="margin-top:4px;font-size:12px">또는</span>
+    <button class="btn" onclick="document.getElementById('file-input').click()">파일 선택</button>
+  </div>
+  <input type="file" id="file-input" accept=".csv">
+  <p style="font-size:12px;color:#4a5568">Market_bot/data/csv/history_all.csv</p>
+</div>
+
+<!-- ── 대시보드 ── -->
+<div id="dashboard">
+  <header>
+    <div>
+      <h1>업비트 거래 대시보드</h1>
+      <p id="data-range"></p>
+    </div>
+    <button id="btn-reset" onclick="resetDashboard()">← 다른 파일</button>
+  </header>
+
+  <div class="filters">
+    <label>타입
+      <select id="f-type">
+        <option value="all">전체</option>
+        <option value="order">주문</option>
+        <option value="deposit">입금</option>
+        <option value="withdraw">출금</option>
+      </select>
+    </label>
+    <label>코인
+      <select id="f-coin"><option value="all">전체</option></select>
+    </label>
+    <label>시작일 <input type="date" id="f-from"></label>
+    <label>종료일 <input type="date" id="f-to"></label>
+  </div>
+
+  <div class="metrics" id="metrics"></div>
+
+  <div class="grid-2-1">
+    <div class="card"><h3>월별 거래금액</h3><canvas id="c-monthly"></canvas></div>
+    <div class="card"><h3>코인별 비중 Top 8</h3><canvas id="c-pie"></canvas></div>
+  </div>
+  <div class="spacer"></div>
+  <div class="grid-1-1">
+    <div class="card"><h3>코인별 매수/매도 횟수</h3><canvas id="c-coin-bar"></canvas></div>
+    <div class="card"><h3>월별 입출금 (KRW)</h3><canvas id="c-flow"></canvas></div>
+  </div>
+  <div class="spacer"></div>
+  <div class="grid-1-2">
+    <div class="card"><h3>월별 수수료</h3><canvas id="c-fee"></canvas></div>
+    <div class="card"><h3>누적 거래금액</h3><canvas id="c-cumul"></canvas></div>
+  </div>
+  <div class="spacer"></div>
+
+  <div class="table-wrap">
+    <h3>거래 내역 <span id="table-count" style="color:#4299e1;font-weight:400"></span></h3>
+    <div class="table-scroll">
+      <table>
+        <thead>
+          <tr>
+            <th>일시</th><th>타입</th><th>코인</th><th>구분</th>
+            <th style="text-align:right">가격</th>
+            <th style="text-align:right">수량</th>
+            <th style="text-align:right">거래금액</th>
+            <th style="text-align:right">수수료</th>
+            <th>상태</th>
+          </tr>
+        </thead>
+        <tbody id="tbody"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script>
+const PALETTE = ['#4299e1','#fc8181','#68d391','#f6ad55','#b794f4','#4fd1c5','#f687b3','#faf089','#76e4f7','#9ae6b4'];
+const GRID    = '#1e2533';
+const TICK    = { color: '#718096' };
+const gridCfg = { color: GRID };
+
+let allData = [], charts = {};
+
+// ── 유틸 ──────────────────────────────────────────────────
+const fmt    = n => n !== '' && n != null ? Number(n).toLocaleString('ko-KR', { maximumFractionDigits: 4 }) : '-';
+const fmtKRW = n => n !== '' && n != null ? '₩' + Math.round(Number(n)).toLocaleString('ko-KR') : '-';
+const ym     = d => (d || '').slice(0, 7);
+const ds     = d => (d || '').slice(0, 10);
+const sumBy  = (arr, k) => arr.reduce((s, r) => s + (Number(r[k]) || 0), 0);
+const groupBy = (arr, k) => arr.reduce((acc, r) => { const key = r[k] || '?'; (acc[key] = acc[key] || []).push(r); return acc; }, {});
+
+// ── 파일 로드 ─────────────────────────────────────────────
+function loadFile(file) {
+  Papa.parse(file, {
+    header: true, skipEmptyLines: true,
+    complete({ data }) {
+      allData = data.map(r => ({
+        ...r,
+        coin: (r.market || '').replace('KRW-', '') || r.currency || '',
+        trade_amount: (Number(r.price) || 0) * (Number(r.executed_volume) || 0),
+      }));
+      initDashboard();
+    }
+  });
+}
+
+document.getElementById('file-input').addEventListener('change', e => { if (e.target.files[0]) loadFile(e.target.files[0]); });
+
+const dropArea = document.getElementById('drop-area');
+dropArea.addEventListener('dragover',  e => { e.preventDefault(); dropArea.classList.add('over'); });
+dropArea.addEventListener('dragleave', () => dropArea.classList.remove('over'));
+dropArea.addEventListener('drop', e => {
+  e.preventDefault(); dropArea.classList.remove('over');
+  const file = e.dataTransfer.files[0];
+  if (file && file.name.endsWith('.csv')) loadFile(file);
+});
+
+// ── 초기화 ────────────────────────────────────────────────
+function initDashboard() {
+  const dates = allData.map(r => ds(r.created_at)).filter(Boolean).sort();
+  document.getElementById('data-range').textContent =
+    `${dates[0]} ~ ${dates[dates.length - 1]} · 총 ${allData.length.toLocaleString()}건`;
+
+  const coinSel = document.getElementById('f-coin');
+  coinSel.innerHTML = '<option value="all">전체</option>';
+  [...new Set(allData.map(r => r.coin).filter(Boolean))].sort()
+    .forEach(c => { const o = document.createElement('option'); o.value = o.textContent = c; coinSel.appendChild(o); });
+
+  document.getElementById('f-from').value = dates[0];
+  document.getElementById('f-to').value   = dates[dates.length - 1];
+
+  ['f-type','f-coin','f-from','f-to'].forEach(id =>
+    document.getElementById(id).addEventListener('change', render));
+
+  document.getElementById('dropzone').style.display  = 'none';
+  document.getElementById('dashboard').style.display = 'block';
+  render();
+}
+
+function resetDashboard() {
+  Object.values(charts).forEach(c => c.destroy());
+  charts = {}; allData = [];
+  document.getElementById('f-coin').innerHTML = '<option value="all">전체</option>';
+  document.getElementById('file-input').value = '';
+  document.getElementById('dropzone').style.display  = 'flex';
+  document.getElementById('dashboard').style.display = 'none';
+}
+
+// ── 필터 ─────────────────────────────────────────────────
+function filtered() {
+  const type = document.getElementById('f-type').value;
+  const coin = document.getElementById('f-coin').value;
+  const from = document.getElementById('f-from').value;
+  const to   = document.getElementById('f-to').value;
+  return allData.filter(r => {
+    const d = ds(r.created_at);
+    return (type === 'all' || r.type === type)
+        && (coin === 'all' || r.coin === coin)
+        && (!from || d >= from)
+        && (!to   || d <= to);
+  });
+}
+
+// ── 렌더 ─────────────────────────────────────────────────
+function render() {
+  const data   = filtered();
+  const orders = data.filter(r => r.type === 'order');
+  const deps   = data.filter(r => r.type === 'deposit');
+  const withs  = data.filter(r => r.type === 'withdraw');
+
+  // 지표
+  document.getElementById('metrics').innerHTML = [
+    { label: '총 거래건수',  value: data.length.toLocaleString() + '건',          sub: `주문 ${orders.length} | 입금 ${deps.length} | 출금 ${withs.length}` },
+    { label: '매수',         value: orders.filter(r=>r.side==='bid').length + '건', sub: fmtKRW(sumBy(orders.filter(r=>r.side==='bid'), 'trade_amount')) },
+    { label: '매도',         value: orders.filter(r=>r.side==='ask').length + '건', sub: fmtKRW(sumBy(orders.filter(r=>r.side==='ask'), 'trade_amount')) },
+    { label: '총 거래금액',  value: fmtKRW(sumBy(orders, 'trade_amount')),          sub: '주문 기준' },
+    { label: '총 수수료',    value: fmtKRW(sumBy(orders, 'paid_fee')),              sub: '' },
+  ].map(i => `<div class="metric"><div class="metric-label">${i.label}</div><div class="metric-value">${i.value}</div><div class="metric-sub">${i.sub}</div></div>`).join('');
+
+  const months = [...new Set(data.map(r => ym(r.created_at)).filter(Boolean))].sort();
+
+  // 월별 거래금액
+  mk('c-monthly', 'bar', {
+    labels: months,
+    datasets: [
+      { label: '매수', data: months.map(m => sumBy(orders.filter(r => ym(r.created_at)===m && r.side==='bid'), 'trade_amount')), backgroundColor: '#4299e1cc' },
+      { label: '매도', data: months.map(m => sumBy(orders.filter(r => ym(r.created_at)===m && r.side==='ask'), 'trade_amount')), backgroundColor: '#fc8181cc' },
+    ]
+  }, { scales: { x: { ticks: {...TICK, maxRotation: 45}, grid: gridCfg }, y: { ticks: {...TICK, callback: v => '₩'+(v/1e6).toFixed(0)+'M'}, grid: gridCfg } } });
+
+  // 코인 파이
+  const coinAmt = Object.entries(groupBy(orders, 'coin'))
+    .map(([c, v]) => ({ c, a: sumBy(v, 'trade_amount') })).sort((a,b) => b.a-a.a).slice(0, 8);
+  mk('c-pie', 'doughnut', {
+    labels: coinAmt.map(r => r.c),
+    datasets: [{ data: coinAmt.map(r => r.a), backgroundColor: PALETTE, borderWidth: 0 }]
+  }, { cutout: '55%', plugins: { legend: { position: 'right', labels: { color: '#a0aec0', font: { size: 11 } } } } });
+
+  // 코인별 매수/매도 횟수
+  const topCoins = Object.entries(groupBy(orders, 'coin')).sort((a,b) => b[1].length-a[1].length).slice(0,12).map(r=>r[0]);
+  mk('c-coin-bar', 'bar', {
+    labels: topCoins,
+    datasets: [
+      { label: '매수', data: topCoins.map(c => orders.filter(r => r.coin===c && r.side==='bid').length), backgroundColor: '#4299e1cc' },
+      { label: '매도', data: topCoins.map(c => orders.filter(r => r.coin===c && r.side==='ask').length), backgroundColor: '#fc8181cc' },
+    ]
+  }, { scales: { x: { ticks: TICK, grid: gridCfg }, y: { ticks: TICK, grid: gridCfg } } });
+
+  // 입출금
+  const krwDeps  = deps.filter(r  => r.currency === 'KRW');
+  const krwWiths = withs.filter(r => r.currency === 'KRW');
+  mk('c-flow', 'bar', {
+    labels: months,
+    datasets: [
+      { label: '입금', data: months.map(m => sumBy(krwDeps.filter(r  => ym(r.created_at)===m), 'amount')), backgroundColor: '#68d391cc' },
+      { label: '출금', data: months.map(m => sumBy(krwWiths.filter(r => ym(r.created_at)===m), 'amount')), backgroundColor: '#f6ad55cc' },
+    ]
+  }, { scales: { x: { ticks: {...TICK, maxRotation: 45}, grid: gridCfg }, y: { ticks: {...TICK, callback: v => '₩'+(v/1e6).toFixed(1)+'M'}, grid: gridCfg } } });
+
+  // 수수료
+  mk('c-fee', 'line', {
+    labels: months,
+    datasets: [{ label: '수수료', data: months.map(m => sumBy(orders.filter(r => ym(r.created_at)===m), 'paid_fee')), borderColor: '#b794f4', backgroundColor: '#b794f422', fill: true, tension: 0.3, pointRadius: 3 }]
+  }, { scales: { x: { ticks: {...TICK, maxRotation: 45}, grid: gridCfg }, y: { ticks: TICK, grid: gridCfg } } });
+
+  // 누적
+  let cum = 0;
+  mk('c-cumul', 'line', {
+    labels: months,
+    datasets: [{ label: '누적 거래금액', data: months.map(m => { cum += sumBy(orders.filter(r => ym(r.created_at)===m), 'trade_amount'); return cum; }), borderColor: '#4fd1c5', backgroundColor: '#4fd1c522', fill: true, tension: 0.3, pointRadius: 3 }]
+  }, { scales: { x: { ticks: {...TICK, maxRotation: 45}, grid: gridCfg }, y: { ticks: {...TICK, callback: v => '₩'+(v/1e6).toFixed(0)+'M'}, grid: gridCfg } } });
+
+  // 테이블
+  const rows = [...data].sort((a,b) => (b.created_at||'').localeCompare(a.created_at||'')).slice(0, 300);
+  document.getElementById('table-count').textContent = `(${data.length.toLocaleString()}건 중 최대 300행)`;
+  document.getElementById('tbody').innerHTML = rows.map(r => {
+    const tBadge = r.type==='order' ? `<span class="badge ord">주문</span>` : r.type==='deposit' ? `<span class="badge dep">입금</span>` : `<span class="badge wit">출금</span>`;
+    const sBadge = r.side==='bid' ? `<span class="badge bid">매수</span>` : r.side==='ask' ? `<span class="badge ask">매도</span>` : '-';
+    return `<tr>
+      <td>${(r.created_at||'').slice(0,16).replace('T',' ')}</td>
+      <td>${tBadge}</td><td><b>${r.coin||'-'}</b></td><td>${sBadge}</td>
+      <td style="text-align:right">${r.price ? fmt(r.price) : '-'}</td>
+      <td style="text-align:right">${r.executed_volume ? fmt(r.executed_volume) : '-'}</td>
+      <td style="text-align:right">${r.trade_amount ? fmtKRW(r.trade_amount) : '-'}</td>
+      <td style="text-align:right">${r.paid_fee ? fmt(r.paid_fee) : '-'}</td>
+      <td>${r.state||'-'}</td>
+    </tr>`;
+  }).join('');
+}
+
+function mk(id, type, data, extra = {}) {
+  if (charts[id]) charts[id].destroy();
+  charts[id] = new Chart(document.getElementById(id), {
+    type, data,
+    options: {
+      responsive: true,
+      plugins: { legend: { labels: { color: '#a0aec0', boxWidth: 12, font: { size: 11 } } } },
+      ...extra
+    }
+  });
+}
+</script>
+</body>
+</html>
